@@ -23,10 +23,18 @@ except:
     from . import bvh_process
     from bvh_process import *
 
-    
+# 导出bvh并后处理
 def deal_bvh(self, context, uiProperty):
     
     bpy.context.area.ui_type = 'VIEW_3D'
+
+    for obj in bpy.data.objects:
+        if 'refer' not in obj.name:
+            target_name = obj.name
+            break
+    ob = bpy.data.objects[target_name]
+    bpy.context.view_layer.objects.active = ob
+    
     num_name = uiProperty.file_name.strip().strip('.bvh')
     
     last_frame = int(bpy.data.actions[0].frame_range[1])
@@ -48,7 +56,9 @@ def deal_bvh(self, context, uiProperty):
     if uiProperty.bvh_simp:
         bvh_smip_write(input_path=tmp_path, 
                         output_path=simp_path)
-        
+
+
+# 导入bvh        
 def load_bvh(self, context, uiProperty):
     # 清空所有骨架
     for arm in bpy.data.armatures:
@@ -58,20 +68,36 @@ def load_bvh(self, context, uiProperty):
     for action in bpy.data.actions:
         bpy.data.actions.remove(action)
         
-    load_path = uiProperty.input_path.strip()
+    load_path_dis = uiProperty.input_path.strip()
+    
+    load_path = os.path.join(load_path_dis, uiProperty.file_name.strip().strip('.bvh') + '.bvh')
     bpy.ops.import_anim.bvh(filepath=load_path, rotate_mode='ZXY', axis_forward='Y', axis_up='Z')
+    
     # 转向世界正向
     bpy.context.object.rotation_euler[0] = 1.5708
     bpy.context.scene.frame_current = 1
-    ob_name = uiProperty.input_path.strip().split('\\')[-1].strip('.bvh')
+    ob_name = uiProperty.file_name.strip().strip('.bvh')
     ob = bpy.data.objects[ob_name]
+    
+    # 选定该物体
     bpy.context.view_layer.objects.active = ob
+    
+    # 复制一个参考
+    bpy.ops.view3d.copybuffer()
+    bpy.ops.view3d.pastebuffer()
+    
+    bpy.data.objects[ob_name + '.001'].name = ob_name + 'refer'
+
+    bpy.data.actions[ob_name + '.001'].name = ob_name + 'refer'
+    bpy.data.armatures[ob_name + '.001'].name = ob_name + 'refer'
+    
+    bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
 
 
 # 绑定ik手柄
 def add_ik_Hand(self, context, baseBone, uiProperty):
     
-    ob_name = uiProperty.input_path.strip().split('\\')[-1].strip('.bvh')
+    ob_name = uiProperty.file_name.strip().strip('.bvh')
     ob = bpy.data.objects[ob_name]
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
@@ -125,12 +151,77 @@ def add_ik_Hand(self, context, baseBone, uiProperty):
         bpy.context.object.pose.bones[parent_name].constraints["IK"].subtarget = bone_leftHand_ik.name
         
         bpy.ops.pose.select_all(action='DESELECT')
-
+        
+        # 激活关键帧
+        bpy.context.scene.frame_current = 1
         bpy.data.objects[ob_name].data.bones.active = bone_leftHand_ik
+        bone = bpy.data.objects[ob_name].pose.bones[bone_leftHand_ik.name]
+        bone.keyframe_insert(data_path="location")
         
+        # 添加动画资产
+        # bpy.context.area.ui_type = 'TIMELINE'
+        # bpy.ops.poselib.create_pose_asset(activate_new_action=True)
+        # bpy.context.area.ui_type = 'VIEW_3D'
 
         
+# ik手柄移动至原动作参考处
+def move_handle_refer(self, context, uiProperty):
+    bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
+    for obj in bpy.data.objects:
+        if 'refer' not in obj.name:
+            ob_name = obj.name
     
+    if bpy.data.objects[ob_name].data.bones.active != None:
+        ik_bone = bpy.data.objects[ob_name].data.bones.active
+    else:
+        return
+    
+    
+    bpy.ops.pose.select_all(action='DESELECT')
+    refer_name = ob_name + 'refer'
+    bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
+    print(ik_bone.name)
+    
+    targetname = ik_bone.name[len('Bone_handle_'):]
+
+    # 确定参考骨骼坐标
+    targetbone = bpy.data.objects[refer_name].data.bones[targetname]
+    bpy.ops.object.mode_set(mode='OBJECT') #切换为OBJECT更改模式
+
+    ob = bpy.data.objects[refer_name]
+    bpy.context.view_layer.objects.active = ob
+    
+    bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
+    bpy.ops.pose.select_all(action='DESELECT')
+
+    bpy.data.objects[refer_name].data.bones.active = targetbone
+    bpy.ops.view3d.snap_cursor_to_selected()
+    
+    
+    # 再选回原骨骼
+    targetbone = bpy.data.objects[ob_name].data.bones['Bone_handle_' + targetname]
+    bpy.ops.object.mode_set(mode='OBJECT') #切换为OBJECT更改模式
+    
+    ob = bpy.data.objects[ob_name]
+    bpy.context.view_layer.objects.active = ob
+    
+    bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
+    bpy.ops.pose.select_all(action='DESELECT')
+    
+    bpy.data.objects[ob_name].data.bones.active = targetbone
+    bpy.ops.view3d.snap_selected_to_cursor(use_offset=False)
+    
+    # k
+    bpy.context.area.ui_type = 'TIMELINE'
+    bpy.ops.action.keyframe_insert(type='SEL')
+    bpy.context.area.ui_type = 'VIEW_3D'
+
+    
+# 每隔若干帧对齐动作
+def auto_aline(self, context, uiProperty):
+    pass
+
+
 class bvhInput(bpy.types.Operator):
     # import bvh
     bl_label='bvh-ik工具导入'
@@ -157,7 +248,7 @@ class bvhOutput(bpy.types.Operator):
     
 class ikHandleLH(bpy.types.Operator):
     # add left hand ik handle
-    bl_label='添加'
+    bl_label='添加左手ik控制骨骼'
     bl_idname = 'obj.ikaddlh' # no da xie
     bl_options = {"REGISTER", "UNDO"}
     
@@ -167,14 +258,25 @@ class ikHandleLH(bpy.types.Operator):
         return {'FINISHED'}
 
 class ikHandleRH(bpy.types.Operator):
-    # add left hand ik handle
-    bl_label='添加'
+    # add hand ik handle
+    bl_label='添加右手ik控制骨骼'
     bl_idname = 'obj.ikaddrh' # no da xie
     bl_options = {"REGISTER", "UNDO"}
     
     def execute(self, context):
         uiProperty = context.scene.uiProperty
         add_ik_Hand(self, context, 'hand_l', uiProperty)
+        return {'FINISHED'}
+    
+class ikReferMove(bpy.types.Operator):
+    # move hand ik handle
+    bl_label='添加'
+    bl_idname = 'obj.ikmove' # no da xie
+    bl_options = {"REGISTER", "UNDO"}
+    
+    def execute(self, context):
+        uiProperty = context.scene.uiProperty
+        move_handle_refer(self, context, uiProperty)
         return {'FINISHED'}
  
     
@@ -188,27 +290,33 @@ class PT_view3d_IK(bpy.types.Panel):
     # ui_type
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_context = "objectmode"
+    # bl_context = ["objectmode", 'posemode']
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="bvh输出", icon="BLENDER")
+        layout.label(text="bvh导入", icon="ARMATURE_DATA")
 
         col = layout.column()
         scene = context.scene.uiProperty
         
         # 生成按钮
+        col.prop(scene, 'file_name', text="文件名称")
         col.prop(scene, 'input_path', text="导入文件路径")
         col.operator("obj.ikbvhin", text="导入",icon="IMPORT")
         row = layout.row()
         
+        col.label(text="ik操作", icon="CONSTRAINT_BONE")
         split = layout.split(factor=0.75)
         col = split.column()
         col.operator("obj.ikaddlh", text="添加左手ik控制骨骼",icon="BONE_DATA")
         col.operator("obj.ikaddrh", text="添加右手ik控制骨骼",icon="BONE_DATA")
+        col.operator("obj.ikmove", text="对齐参考动作",icon="TRACKING_REFINE_FORWARDS")
         
+        col.label(text="关键帧工具", icon="TIME")
+        
+        col.label(text="bvh导出", icon="ARMATURE_DATA")
         col = layout.column()
-        col.prop(scene, 'file_name', text="文件名称")
+        
         col.prop(scene, 'output_path', text="输出路径")
         col.prop(scene, 'bvh_simp', text="bvh自动精简")
 
@@ -231,13 +339,15 @@ class uiProperty(bpy.types.PropertyGroup):
     file_name: bpy.props.StringProperty(name='file_name')
     bvh_simp: bpy.props.BoolProperty(name='bvh_simp')
     
+
 classGroup = [uiProperty,
             bvhOutput,
             bvhSmooth,
             PT_view3d_IK,
             bvhInput,
             ikHandleLH,
-            ikHandleRH
+            ikHandleRH,
+            ikReferMove
 ]
 
 def register():
