@@ -99,8 +99,11 @@ def bvh_smip_write(input_path, output_path):
                 motion_line_new.append(new_line)
             else:
                 motion_line_new.append(line)
-            
         
+    # t_pose校准
+    real_t_pose = '0.000181 87.758700 -0.678990 0.000000 -85.784000 -90.000000 -12.742000 -0.000000 -0.000000 11.122100 -0.000000 -0.000000 9.625430 -0.000200 -0.000002 9.119750 0.000270 0.006993 -5.623880 -0.000205 -0.000006 -14.999300 0.000128 0.000032 0.391492 0.000003 0.000004 7.322310 -0.000000 0.000000 -0.009625 -5.000080 89.998700 -0.000260 0.000004 0.000345 0.000262 -0.000003 -0.000348 90.000000 -90.000000 90.000000 0.000000 0.000001 25.000000 -0.000000 -0.000000 -30.000000 0.000000 0.000000 0.000000 0.000000 0.000001 -4.999960 0.000000 -0.000001 4.999960 -0.000000 0.000000 0.000000 -0.000000 0.000000 0.000000 -0.000000 0.000000 -14.000000 -0.000000 0.000001 17.000000 0.255023 0.008830 1.966850 0.000000 0.000001 1.000050 -0.000000 0.000000 0.000000 0.000000 -0.000000 0.000000 0.000021 -0.000000 -0.000003 -0.000000 0.000000 0.000000 0.000000 0.000001 1.999950 -0.000000 -0.000001 -4.999960 -0.000000 0.000000 0.000000 0.000000 -0.000000 0.000000 -179.998000 -4.999660 90.003000 -0.000033 0.000003 0.000047 0.000034 -0.000013 -0.000048 6.154440 -90.000000 6.154440 -0.000000 -0.000000 -4.999960 -0.000000 0.000000 4.999960 -0.000000 -0.000000 -0.000000 0.000000 0.000000 0.000000 -0.000000 -0.000000 -14.000000 0.000000 0.000000 17.000000 0.256656 0.008881 1.966590 0.000000 0.000000 1.000050 -0.000000 -0.000000 -0.000000 -0.000000 -0.000000 -0.000000 0.000000 -0.000000 -0.000000 -0.000000 -0.000000 -0.000000 0.000000 -0.000000 25.000000 0.000111 -0.000030 -30.000000 0.000000 0.000000 -0.000000 0.000000 -0.000000 1.999950 -0.000000 -0.000000 -4.999960 0.000000 -0.000000 -0.000000 0.000000 0.000000 -0.000000 -174.609000 8.459090 -0.159803 -2.461250 0.030415 -0.028378 -0.512969 0.026641 0.014892 5.393400 8.459140 -0.159792 -2.463750 0.030407 -0.028761 -0.509212 0.026596 0.015448\n'
+    motion_line_new[3] = real_t_pose
+    
     with open(output_path, 'w') as f:
         f.writelines(skel_line_new + motion_line_new)
 
@@ -1250,9 +1253,14 @@ def bvh2json(input_path, output_path):
             motionKey = 1 
             continue
 
-        if motionKey:
-
-            tmp_group = [float(x) for x in line.split(' ')]
+        if motionKey and line.strip('\n') != '':
+            # print(line[-1])
+            
+            tmp_str = [x for x in line.strip('\n').split(' ')]
+            tmp_group = []
+            for s in tmp_str:
+                if s != '':
+                    tmp_group.append(float(s))
             if t_poseKey:
                 t_pose = tmp_group
                 t_poseKey = 0
@@ -1324,6 +1332,8 @@ def deal_bvh(self, context, uiProperty):
         if uiProperty.json_tran:
             json_path = os.path.join(uiProperty.output_path.strip(), 'cpy.json')
             bvh2json(simp_path, json_path)
+            
+        os.remove(tmp_path)
 
 # 导入bvh        
 def load_bvh(self, context, uiProperty):
@@ -1461,13 +1471,13 @@ def move_handle_refer(self, context, uiProperty):
     bpy.ops.pose.select_all(action='DESELECT')
     refer_name = ob_name + 'refer'
     bpy.ops.object.mode_set(mode='POSE') #切换为pose更改模式
-    print(ik_bone.name)
+    # print(ik_bone.name)
     
     targetname = ik_bone.name[len('Bone_handle_'):]
 
     # 确定参考骨骼坐标
     targetbone = bpy.data.objects[refer_name].data.bones[targetname]
-    print(targetbone.name)
+    # print(targetbone.name)
     bpy.ops.object.mode_set(mode='OBJECT') #切换为OBJECT更改模式
 
     ob = bpy.data.objects[refer_name]
